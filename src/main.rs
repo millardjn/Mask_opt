@@ -49,10 +49,10 @@ fn main() {
 
     input.apply_focal_length_phase(opt.focal_length);
 
-    let airy = airy_radius(opt.wavelength, opt.focal_length, opt.diameter);
-    let output = rayleigh_sommerfeld(&input, 600, airy * 0.5, opt.focal_length);
+    //let airy = airy_radius(opt.wavelength, opt.focal_length, opt.diameter);
+    //let output = rayleigh_sommerfeld(&input, 600, airy * 0.5, opt.focal_length);
 
-   
+    let output = fresnel(&input, opt.focal_length);
 
     let mut max = 0.0;
     let amp = output.amplitude.map(|e| {
@@ -187,6 +187,60 @@ pub (crate) struct OutputAmplitude {
     amplitude: Array2<Complex<f64>>,
     resolution: f64,
     z_position: f64,
+}
+
+fn fresnel(input: &InputAmplitude, z_position: f64) -> OutputAmplitude {
+    assert!(input.amplitude.is_standard_layout());
+    let z = z_position;
+    let lambda = input.wavelength;
+    let k = 2.0 * ::std::f64::consts::PI / input.wavelength;
+
+    let input_resolution = input.resolution();
+
+    // input height and width
+    let hi = input.amplitude.shape()[0];
+    let wi = input.amplitude.shape()[1];
+
+    let m = 5;
+
+    let n = input.max_dim() * m;
+    let resolution = lambda * z / (input_resolution * n as f64);
+    println!("{} {}", input_resolution, resolution);
+
+    let mut intermediate1 = Array2::from_shape_fn([n, n], |(yi, xi)| {
+        if yi >= (n - hi) / 2
+            && yi < (n - hi) / 2 + hi
+            && xi >= (n - hi) / 2
+            && xi < (n - wi) / 2 + wi
+        {
+            let x = input.amplitude[[yi - (n - hi) / 2, xi - (n - wi) / 2]];
+
+            let xi = (xi as f64 - (n / 2) as f64) * input_resolution;
+            let yi = (yi as f64 - (n / 2) as f64) * input_resolution;
+
+            x * Complex::new(0.0, (yi * yi + xi * xi) * (PI / (lambda * z))).exp()
+        } else {
+            Complex::new(0.0, 0.0)
+        }
+    });
+
+    ifft2_shift_inplace(intermediate1.view_mut());
+    let mut intermediate2 = fft2(intermediate1);
+    fft2_shift_inplace(intermediate2.view_mut());
+
+    let scale = Complex::new(0.0, k * z).exp() / Complex::new(0.0, lambda * z);
+    intermediate2.indexed_iter_mut().for_each(|((yo, xo), eo)| {
+        let xo = (xo as f64 - (n / 2) as f64) * resolution;
+        let yo = (yo as f64 - (n / 2) as f64) * resolution;
+
+        *eo = *eo * scale * Complex::new(0.0, (yo * yo + xo * xo) * (PI / (lambda * z))).exp()
+    });
+
+    OutputAmplitude {
+        amplitude: intermediate2,
+        resolution,
+        z_position,
+    }
 }
 
 // fn angular_spectrum_method(u, z){
