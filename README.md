@@ -27,7 +27,7 @@ High numerical aperture (NA) imaging systems can exceed the valid range of the F
 
 
 ## Wavelength Sensitivity
-Below is an example the wavelength sensitivity of diffraction spikes. Rainbow artifacts appear in the outer extent of the spikes, where the PSF changes the most with wavelength.
+Below is an example the wavelength sensitivity of diffraction spikes. The rainbow appearance of the outer extent of the spikes indicates where the PSF changes the most with wavelength.
 
 ![Antares](docs/ANTARES_wavelength_sensitivity.jpg)
 
@@ -41,7 +41,7 @@ Note that straight edges of the spider vane produce diffraction which constructi
 
 ## Masked Example
 A manual (non-optimised) modification of the aperture results in spikes which decay rapidly.
-It is expected that this can be improved upon by optimisation, and also allowing modulation of the outer edge of the aperture.
+It is expected that this can be improved upon by optimisation, and by also allowing modulation of the outer edge of the aperture.
 
 ![Aperture](docs/3vane_34CO_masked.png)
 
@@ -49,3 +49,8 @@ It is expected that this can be improved upon by optimisation, and also allowing
 
 ## License
 MIT
+
+## References
+Satoru Odate et al., *Angular spectrum calculations for arbitrary focal length with a scaled convolution*, Core Technology Center - Nikon Corporation
+
+Joseph W. Goodman, *Introduction to Fourier Optics*, Stanford University
