@@ -65,8 +65,9 @@ fn asm_type_1(
 ) -> OutputAmplitude {
     let M = max(A_xi.shape()[0], A_xi.shape()[1]);
     let A_xi_mid = M / 2;
+    let freq_resolution = M as f64 / pitch;
 
-    //A(ξ)*f^2/(f^2+ξ^2)*exp(-2pi(sqrt(f^2+ξ^2)-f)/λ)
+    // A(ξ)*f^2/(f^2+ξ^2)*exp(-2πi(sqrt(f^2+ξ^2)-f)/λ)
     let mut intermediate1 = Array2::from_shape_fn([M, M], |(y, x)| {
         let xi0 = (y as f64 - A_xi_mid as f64) * pitch;
         let xi1 = (x as f64 - A_xi_mid as f64) * pitch;
@@ -75,11 +76,11 @@ fn asm_type_1(
             * Complex::new(f * f / (xi0 * xi0 + xi1 * xi1 + f * f), 0.0)
             * Complex::new(
                 0.0,
-                ((xi0 * xi0 + xi1 * xi1 + f * f).sqrt() - f) * -2.0 * PI / lambda,
+                -2.0 * PI / lambda * ((xi0 * xi0 + xi1 * xi1 + f * f).sqrt() - f),
             )
             .exp()
     });
-    let freq_resolution = M as f64 / pitch;
+    
 
     // a(u)
     ifft2_shift_inplace(intermediate1.view_mut());
@@ -131,8 +132,74 @@ fn asm_type_2(
     lambda: f64,
     gamma: f64,
 ) -> OutputAmplitude {
+    let M = max(A_xi.shape()[0], A_xi.shape()[1]);
+    let A_xi_mid = M / 2;
 
-    unimplemented!()
+    // A(ξ)*f^2/(f^2+ξ^2)*exp(-2πi(sqrt(f^2+ξ^2)-f)/λ)
+    let intermediate1 = Array2::from_shape_fn([M, M], |(y, x)| {
+        let xi0 = (y as f64 - A_xi_mid as f64) * pitch;
+        let xi1 = (x as f64 - A_xi_mid as f64) * pitch;
+
+        A_xi[(y, x)]
+            * Complex::new(f * f / (xi0 * xi0 + xi1 * xi1 + f * f), 0.0)
+            * Complex::new(
+                0.0,
+                -2.0 * PI / lambda * ((xi0 * xi0 + xi1 * xi1 + f * f).sqrt() - f),
+            )
+            .exp()
+    });
+    let mut intermediate2 = pad_zero_2D(intermediate1.view());
+
+    // a(u)
+    ifft2_shift_inplace(intermediate2.view_mut());
+    let mut a_u = fft2(intermediate2);
+    fft2_shift_inplace(a_u.view_mut());
+
+
+    // (z/sqrt(ξ∙ξ+z^2).exp(2πif.sqrt(ξ∙ξ+z^2))).(1/(2π.sqrt(ξ∙ξ+z^2))+i/λ)
+    let H_xi = Array2::from_shape_fn([M, M], |(y, x)| {
+        let xi0 = (y as f64 - A_xi_mid as f64) * pitch;
+        let xi1 = (x as f64 - A_xi_mid as f64) * pitch;
+
+            Complex::new(z /(xi0 * xi0 + xi1 * xi1 + z * z).sqrt(), 0.0)
+            * Complex::new(
+                0.0,
+                2.0 * PI * f * (xi0 * xi0 + xi1 * xi1 + z * z).sqrt(),
+            )
+            .exp()
+            * Complex::new(1.0/(2.0 * PI *(xi0 * xi0 + xi1 * xi1 + z * z).sqrt()), 1.0/lambda)
+    });
+    let mut H_xi = pad_zero_2D(H_xi.view());
+
+    // h(u)
+    ifft2_shift_inplace(H_xi.view_mut());
+    let mut h_u = fft2(H_xi);
+    fft2_shift_inplace(h_u.view_mut());
+
+
+    let mut intermediate3 = a_u * h_u;
+
+    //A(x)
+    if gamma == 1.0 {
+        ifft2_shift_inplace(intermediate3.view_mut());
+        let mut A_x = ifft2(intermediate3);
+        fft2_shift_inplace(A_x.view_mut());
+
+        OutputAmplitude {
+            amplitude: A_x,
+            z_position: z,
+            resolution: pitch,
+        }
+    } else if gamma < 1.0 {
+        panic!()
+    } else {
+        let A_x = scaling_czt(intermediate3, M, pitch, lambda);
+        OutputAmplitude {
+            amplitude: A_x,
+            z_position: z,
+            resolution: pitch/lambda,
+        }
+    }
 }
 
 fn asm_type_3(
@@ -166,6 +233,7 @@ fn scaling_czt(
     pitch: f64,
     lambda: f64,
 ) -> Array2<Complex<f64>> {
+    assert!(F_p_minus_m.shape() == &[2*M, 2*M]);
     let L = M as f64 * pitch;
     let x0_0 = 0.0;
     let x0_1 = 0.0;
